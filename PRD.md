@@ -38,8 +38,8 @@ Today this requires opening a laptop, SSHing in, and launching Claude Code. A Di
 ```
 ┌──────────────┐     ┌──────────────────┐     ┌─────────────────┐
 │   Discord    │─ws─▶│   Bot Server     │─pty─▶│  Claude Code    │
-│  (mobile/   │◀─ws─│   (Node.js)      │◀─────│  CLI Process    │
-│   desktop)  │     │                  │      │                 │
+│  (mobile /   │◀─ws─│   (Node.js)      │◀─────│  CLI Process    │
+│   desktop)   │     │                  │      │                 │
 └──────────────┘     │ - Session mgmt   │      │ - Your project  │
                      │ - Stream buffer  │      │ - File system   │
                      │ - Auth/perms     │      │ - Git, tests    │
