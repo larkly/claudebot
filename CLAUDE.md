@@ -29,9 +29,10 @@ The bot has three main layers:
 
 - **Thread = session**: one Discord thread ↔ one Claude Code process. Thread ID is the session key.
 - **Streaming via message editing**: bot sends an initial message then edits it as output accumulates; a ✅ reaction signals completion.
-- **Secret redaction**: all output must be filtered through configurable regex patterns before being sent to Discord (default patterns cover `sk-*`, `ghp_*`, `AKIA*`).
-- **Approval gates**: destructive file operations surface a Discord embed with ✅/❌ reactions before proceeding (configurable `autoApprove`).
+- **Secret redaction**: all output must be filtered through configurable regex patterns before being sent to Discord (default patterns: `sk-[a-zA-Z0-9]+`, `ghp_[a-zA-Z0-9]+`, `AKIA[A-Z0-9]+`).
+- **Approval gates**: destructive file operations surface a Discord embed with ✅/❌ reactions before proceeding (configurable `autoApprove`; file deletions always require approval).
 - **Command allowlist**: `/run` only executes commands in the project config's `allowedShellCommands` list.
+- **Audit log**: all commands and Claude Code invocations must be logged with user, timestamp, and working directory.
 
 ## Configuration shape
 
@@ -47,9 +48,9 @@ The bot has three main layers:
   "projects": {
     "<name>": {
       "path": "/abs/path/to/repo",
-      "commands": { "test": "...", "build": "...", "lint": "..." },
+      "commands": { "test": "...", "build": "...", "lint": "...", "typecheck": "npx tsc --noEmit" },
       "autoApprove": false,
-      "allowedShellCommands": ["npm", "npx", "node", "git", "cat", "ls"]
+      "allowedShellCommands": ["npm", "npx", "node", "git", "cat", "ls", "grep"]
     }
   }
 }
