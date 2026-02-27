@@ -45,6 +45,8 @@ Design the solution from fundamentals, not from "how did someone else do it":
 
 "Grounded" means: read the existing code, understand the real system, design within it — not in a vacuum.
 
+The design must also be codified precisely enough to serve as an agent prompt. If a Claude Code agent cannot implement the design unambiguously from the written spec alone — without asking clarifying questions — the design is not done. Ambiguity that a human would resolve through conversation becomes a defect when the builder is an agent.
+
 In this codebase the key surfaces to read before designing are: the session manager's state machine, the streaming buffer's rate-limit logic, and the project config schema. Early in the project (before those exist), read PRD.md instead. The adversarial review checklist below is especially important here — this bot executes shell commands, spawns subprocesses with filesystem access, and echoes output to a semi-public channel.
 
 ### 4. Adversarial Review
@@ -73,6 +75,8 @@ Decompose the design into the smallest independently buildable and testable unit
 - Units that can be built in parallel are identified
 - Each unit is small enough that its correctness is obvious
 
+Each unit must be scoped so it can be handed to an independent Claude Code agent without ambiguity or cross-contamination: self-contained file scope, a single well-defined interface boundary, and no implicit shared state that another agent might be simultaneously modifying. If a unit requires knowledge of another unit's internals to implement, it is not atomic enough.
+
 The quality of this stage directly determines whether parallel build works or creates merge conflicts and integration bugs.
 
 ### 7. Parallel Build
@@ -82,6 +86,8 @@ Execute the atomic plan. Multiple units built concurrently where the dependency 
 - Integration points are defined by contracts, not by "we'll figure it out"
 - Progress is tracked at the unit level
 
+In practice, parallelism here means spinning up multiple Claude Code agent instances simultaneously — each running in its own worktree or isolated working directory, each handed exactly one atomic unit's spec as its prompt. Agents operate independently and do not coordinate at runtime; coordination happened at the planning stage. When all agents complete, their outputs are integrated and any conflicts resolved before moving to validation.
+
 ### 8. Build Validation
 
 Verify each unit and the integrated whole:
@@ -90,6 +96,8 @@ Verify each unit and the integrated whole:
 - The build matches the design (not just "it works" but "it works for the right reasons")
 - Type checks, linting, and static analysis are clean
 - Structured pino logs are emitted at the right levels and the audit log captures user, timestamp, and working directory for all commands and Claude Code invocations — this is the only production visibility window for a self-hosted bot
+
+Validation commands (`npx tsc --noEmit`, `npx eslint .`, `npm test`) are run by Claude Code agents and their output reported back. The agent is responsible for interpreting failures, tracing them to the relevant unit, and either fixing in place or flagging for human review. A validation pass is not complete until all three exit zero.
 
 ### 9. QA Pipeline
 
