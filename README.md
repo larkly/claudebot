@@ -41,14 +41,19 @@ Discord thread ──ws──▶ claudebot (Node.js) ──pty──▶ claude C
 ## Quick Start
 
 ```sh
-# 1. Clone
+# 1. Create a Discord application and bot (if you haven't already)
+#    See Prerequisites step 4 above for the Developer Portal setup steps.
+
+# 2. Clone
 git clone https://github.com/larkly/claudebot.git
 cd claudebot
 
-# 2. Install dependencies
+# 3. Install dependencies
 npm install
 
-# 3. Create config
+# 4. Create config
+#    "developer" below must match an actual role name in your Discord server.
+#    Users without this role will be silently denied.
 mkdir -p ~/.discord-claude
 cat > ~/.discord-claude/config.json << 'EOF'
 {
@@ -66,21 +71,21 @@ cat > ~/.discord-claude/config.json << 'EOF'
 }
 EOF
 
-# 4. Set bot token
+# 5. Set bot token
 export DISCORD_BOT_TOKEN=your-token-here
 
-# 5. Start the bot
+# 6. Start the bot
 npm start
 
-# 6. Invite bot to your server
+# 7. Invite bot to your server
 #    In the Developer Portal: OAuth2 → URL Generator
 #    Scopes: bot, applications.commands
-#    Permissions integer: 397552234560
-#    (covers Send Messages, Send Messages in Threads, Create Public/Private Threads,
+#    Permissions integer: 395137075264
+#    (Send Messages, Send Messages in Threads, Create Public/Private Threads,
 #     Manage Threads, Add Reactions, Read Message History, Embed Links)
 #    Open the generated URL, select your server, click Authorize
 
-# 7. In any channel, run:
+# 8. In any channel, run:
 #    /claude Explain the project structure
 ```
 

@@ -79,7 +79,7 @@ REVISIT CONDITION: If the Phase 1 spike confirms `claude --resume` works reliabl
 
 FINAL: lock-in-memory with clear messaging
 BASIS: discord-expert (lock-in-memory) and ux-expert (lock-with-clear-messaging) both agreed; llm-expert abstained. Two of three agree.
-CONSTRAINT FOR AGENTS: Maintain session state in a `Map<string, SessionState>` keyed by thread ID. When a non-owner posts in a locked thread, reply with a **regular (non-ephemeral) thread message** — ephemeral is not available on `messageCreate` events, only on interaction replies. Lock message text: `"This session belongs to @[owner] (active [N]m ago). Start your own: \`/claude <prompt>\` in any channel."` Only the session owner or a user with an admin-configured role may run `/claude-end`. Two independent timers per session: `idleTimeoutSeconds` (default 600 — releases lock on owner inactivity) and `maxSessionDuration` (default 3600 — kills the process regardless of activity). When idle timeout fires, post in the thread: `"@[owner] session released due to inactivity. Thread is now available — use \`/claude\` to start a new session here, or start a fresh thread."` then `@mention` the owner.
+CONSTRAINT FOR AGENTS: Maintain session state in a `Map<string, SessionState>` keyed by thread ID. When a non-owner posts in a locked thread, reply with a **regular (non-ephemeral) thread message** — ephemeral is not available on `messageCreate` events, only on interaction replies. Lock message text: `"This session belongs to @[owner] (active [N]m ago). Start your own: \`/claude <prompt>\` in any channel."` Only the session owner or a user with an admin-configured role may run `/claude-end`. Two independent timers per session: `idleTimeoutSeconds` (default 600 — releases lock on owner inactivity) and `maxSessionDuration` (default 3600 — kills the process regardless of activity). When idle timeout fires, post a single message in the thread: `"@[owner] Session released due to inactivity. Thread is now available — use \`/claude\` to start a new session here, or start a fresh thread."` (The @mention is embedded in the message body; no separate notification needed.)
 
 LOCK STATE SCHEMA:
 ```typescript
@@ -87,7 +87,7 @@ interface SessionState {
   threadId: string;              // Discord thread ID (primary key)
   ownerId: string;               // Discord user ID of session owner
   projectName: string;           // Active project for this session
-  ptyProcess: IPty;              // node-pty process handle
+  ptyProcess: IPty | null;       // node-pty handle for current invocation; null when idle between messages
   startedAt: number;             // Date.now() timestamp
   lastActivityAt: number;        // Date.now() of last owner message (for idle timeout)
   watchdogTimer: NodeJS.Timeout; // maxSessionDuration enforcement
@@ -96,19 +96,20 @@ interface SessionState {
   outputBuffer: string;          // Pending output not yet flushed to Discord
 }
 ```
+NOTE ON EXECUTION MODEL: `ptyProcess` is per-invocation, not per-session. In Phase 1 (stateless mode), each user message spawns a new `claude -p` process that exits after producing its response. `ptyProcess` is set when a process starts and reset to `null` when it exits. The session record (`SessionState`) persists in the Map for the lifetime of the thread's active session, but `ptyProcess` inside it is transient.
 
 REVISIT CONDITION: If a queue-based model is needed (high-traffic multi-user server), add a FIFO queue per thread in Phase 4.
 
 ### Open: Cost Management
 
 DECISION: decided — session cost footer in Phase 1; per-user daily limits deferred to Phase 3
-CONSTRAINT FOR AGENTS (Phase 1): Parse Claude Code CLI stdout for cost/token summary on the final 10 lines of output (regex: `/\$[\d.]+|\d+ tokens?/i`). Append to the session completion message as a footer. Make the regex configurable in global config. Log a warning if no cost data is found in a completed session's output.
+CONSTRAINT FOR AGENTS (Phase 1): Parse Claude Code CLI stdout for cost/token summary on the final 10 lines of output. Match against the configured `costPattern` string (treated as a case-insensitive regex at runtime: `new RegExp(config.global.costPattern, 'i')`; default value: `"\\$[\\d.]+|\\d+ tokens?"`). Append the matched text to the session completion message as a footer. Log a warning if no match is found in a completed session's output.
 CONSTRAINT FOR AGENTS (Phase 3): Add `maxDailyCostPerUser` (number, USD) to the global config. Track per-user daily spend in `~/.discord-claude/usage.json` (reset at midnight). Block new sessions when the limit is reached.
 
 ### Open: Natural Language Fallback
 
 DECISION: decided — treat plain thread messages as prompts (thread-mode)
-CONSTRAINT FOR AGENTS: In the `messageCreate` handler, apply these checks in order: (1) `message.channel.isThread()`, (2) active session exists for `message.channel.id`, (3) `message.author.id === session.ownerId`, (4) `!message.author.bot`. If all pass, write `message.content + '\n'` to the PTY and reset the idle timer. If (1)–(2) pass but (3) fails (non-owner), send the lock message. If (1) passes but (2) fails (no active session), reply: `"No active session in this thread. Use \`/claude <prompt>\` to start a new one."` Do NOT create a session from a plain message. For messages under 10 characters, prepend `"⚠️ Short prompt forwarded to Claude."` to the bot's acknowledgment (do not block).
+CONSTRAINT FOR AGENTS: In the `messageCreate` handler, apply these checks in order: (1) `message.channel.isThread()`, (2) active session exists for `message.channel.id`, (3) `message.author.id === session.ownerId`, (4) `!message.author.bot`. If all pass, spawn a new `claude -p "<message.content>"` process (same as the initial `/claude` handler), reset the idle timer, and stream output into the thread. If (1)–(2) pass but (3) fails (non-owner), send the lock message. If (1) passes but (2) fails (no active session), reply: `"No active session in this thread. Use \`/claude <prompt>\` to start a new one."` Do NOT create a session from a plain message — sessions are only created via `/claude`. For messages under 10 characters, prepend `"⚠️ Short prompt forwarded to Claude."` to the bot's acknowledgment (do not block).
 NOTE: `GatewayIntentBits.MessageContent` is a privileged intent. Enable in the Discord Developer Portal AND in the client constructor. This is a Phase 0 requirement.
 
 ### Open: Persistent Sessions
