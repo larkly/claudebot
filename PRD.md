@@ -281,6 +281,17 @@ All config lives in `~/.discord-claude/config.json` or a `.discord-claude.json` 
 
 ## Milestones
 
+### Phase 0: Project Setup
+
+Before any feature work:
+
+- Initialize `package.json` with all planned dependencies (discord.js v14, node-pty, pino, cosmiconfig, TypeScript, eslint, jest)
+- Configure `tsconfig.json` (strict mode), `.eslintrc.json`, `jest.config.js`
+- Create `src/index.ts` entry point stub
+- Set up `.github/workflows/test.yml` CI pipeline (typecheck, lint, test)
+- Create a private Discord test server with the roles, channels, and bot token the bot expects
+- Document local dev setup in README
+
 ### Phase 1: Core Loop
 
 - Thread-based sessions with `/claude`
@@ -318,8 +329,8 @@ All config lives in `~/.discord-claude/config.json` or a `.discord-claude.json` 
 
 ## Open Questions
 
-1. **Conversation continuity.** Each `claude -p` call is stateless. Options: (a) prepend conversation history to each prompt, (b) use Claude Code's `--resume` flag if supported, (c) accept statelessness and let the user provide context. Need to test which gives the best experience within Claude Code's context limits.
-1. **Multi-user collaboration.** If two people post in the same thread, should both messages go to Claude Code? Current design says yes. May need a "lock" mechanism so one person can claim a session.
+1. **Conversation continuity.** Each `claude -p` call is stateless. Options: (a) prepend conversation history to each prompt, (b) use Claude Code's `--resume` flag if supported, (c) accept statelessness and let the user provide context. Need to test which gives the best experience within Claude Code's context limits. **Decision for MVP: accept statelessness (option c).** Users provide context themselves. Prepending history adds token budget risk and implementation complexity; revisit in Phase 4 based on real usage.
+1. **Multi-user collaboration.** If two people post in the same thread, should both messages go to Claude Code? Current design says yes. May need a "lock" mechanism so one person can claim a session. **Decision for MVP: implement a session lock.** The first user to start a session owns it; other users in the thread are told the session is locked. This prevents interleaved prompts and makes session ownership explicit. Revisit collaborative mode in a later phase.
 1. **Cost management.** Each Claude Code invocation uses API credits. Should the bot surface token usage per session? Should there be per-user daily limits?
 1. **Persistent sessions.** If the bot restarts, all sessions are lost. Options: persist session metadata to disk, or accept that sessions are ephemeral and users re-create threads as needed.
 1. **Self-hosting vs. hosted.** This is designed for self-hosting. Is there demand for a hosted version where users connect their own API key and repo via OAuth?

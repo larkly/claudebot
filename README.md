@@ -1,267 +1,250 @@
 # claudebot
 
-A Discord bot that bridges Discord threads to Claude Code CLI sessions. Developers can interact with their codebase from any device — including mobile — without opening a terminal.
+A Discord bot that gives you remote access to Claude Code CLI sessions from any device, including your phone.
 
-See `PRD.md` for the full product specification.
+## How It Works
 
----
-
-## What It Is
-
-claudebot runs on the same machine as your codebase (or a cloud VM with access to it). It listens for slash commands in Discord, spawns Claude Code as a subprocess per session, and streams output back into the thread in real time.
-
-The core model: one Discord thread equals one Claude Code session. Send a message in the thread, Claude Code processes it, the bot streams the response back. Multiple threads run in parallel for different tasks or projects.
-
-## Why It Exists
-
-When you are away from your workstation, interacting with your code requires opening a laptop, SSHing in, and launching Claude Code. claudebot eliminates that friction by making Discord — which is already on your phone, tablet, and desktop — a first-class interface to your development environment.
-
----
-
-## Architecture
+claudebot runs on the same machine as your codebase. When you type `/claude <prompt>` in Discord, the bot creates a thread, spawns a Claude Code CLI process, and streams its output back into that thread in real time by editing messages as new chunks arrive. One thread equals one session. The session is locked to the user who started it. Plain messages in the thread are forwarded to Claude Code as follow-up prompts; slash commands handle everything else.
 
 ```
-┌──────────────┐     ┌──────────────────────────────┐     ┌─────────────────┐
-│   Discord    │─ws─▶│          Bot Server           │─pty─▶│  Claude Code    │
-│  (mobile /   │◀─ws─│          (Node.js)            │◀────│  CLI Process    │
-│   desktop)   │     │                               │     │                 │
-└──────────────┘     │  ┌────────────────────────┐  │     │ - Your project  │
-                     │  │     Discord Layer       │  │     │ - File system   │
-                     │  │  slash commands, embeds │  │     │ - Git, tests    │
-                     │  └───────────┬────────────┘  │     └─────────────────┘
-                     │              │                │
-                     │  ┌───────────▼────────────┐  │
-                     │  │    Session Manager      │  │
-                     │  │  thread ID → process   │  │
-                     │  └───────────┬────────────┘  │
-                     │              │                │
-                     │  ┌───────────▼────────────┐  │
-                     │  │    Process Layer        │  │
-                     │  │  node-pty, stream buf   │  │
-                     │  └────────────────────────┘  │
-                     └──────────────────────────────┘
+You (phone/desktop)
+  │
+  ▼
+Discord thread ──ws──▶ claudebot (Node.js) ──pty──▶ claude CLI
+                ◀──ws──                     ◀──────  (your repo)
 ```
 
-**Three layers:**
+## Prerequisites
 
-1. **Discord layer** — receives slash commands and thread messages, sends and edits messages and embeds. Each `/claude <prompt>` call creates a new Discord thread that owns one session.
+1. **Node.js 20+** installed on the host machine
 
-2. **Session manager** — maps Discord thread IDs to running Claude Code processes. Handles lifecycle (spawn, stream, terminate) and enforces `maxConcurrentSessions` and `maxSessionDuration`.
+2. **Native build tools** — required by node-pty (a C++ addon used to spawn Claude Code in a pseudo-terminal):
+   - **macOS:** `xcode-select --install`
+   - **Linux (Debian/Ubuntu):** `sudo apt install build-essential python3`
+   - **Windows:** Use WSL, or install [Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022) with the C++ workload
 
-3. **Process layer** — spawns `claude` CLI via node-pty so that Claude Code's terminal output is captured correctly. Buffers stdout chunks and flushes to Discord on a ~1.5 s interval to stay within Discord's rate limit (5 edits per 5 s per message). When a message hits the Discord 2000-char limit, the current message is finalized and a new one is started.
+3. **Claude Code CLI** installed, on PATH, and authenticated:
+   ```sh
+   npm install -g @anthropic-ai/claude-code
+   claude auth   # run once interactively to store credentials
+   claude --version  # verify it works
+   ```
+   The bot does not handle authentication — `claude` must be authenticated under the same user account that runs the bot process.
 
----
+4. **Discord bot token** with privileged intents enabled:
+   - Go to the [Discord Developer Portal](https://discord.com/developers/applications) → your app → **Bot**
+   - Under **Privileged Gateway Intents**, enable **Server Members Intent** and **Message Content Intent**
+   - Copy the bot token
 
-## Tech Stack
+5. **A git repository** the bot will operate on
 
-| Component          | Choice         |
-|--------------------|----------------|
-| Runtime            | Node.js 20+ with TypeScript |
-| Discord library    | discord.js v14 |
-| Process management | node-pty       |
-| Configuration      | cosmiconfig    |
-| Logging            | pino           |
-| Process supervisor | pm2 or systemd |
-
----
-
-## Installation
-
-> Note: no code exists yet. These steps reflect the intended setup once Phase 1 is implemented.
-
-**Prerequisites**
-
-- Node.js 20+
-- Claude Code CLI installed and authenticated (`claude` available in PATH)
-- A Discord application and bot token with the Message Content and Server Members intents enabled
-
-**Steps**
+## Quick Start
 
 ```sh
-# 1. Clone the repository
-git clone https://github.com/your-org/claudebot.git
+# 1. Clone
+git clone https://github.com/larkly/claudebot.git
 cd claudebot
 
 # 2. Install dependencies
 npm install
 
-# 3. Set the bot token
-export DISCORD_BOT_TOKEN=your-token-here
-
-# 4. Create a config file (see Configuration section)
+# 3. Create config
 mkdir -p ~/.discord-claude
-cp config.example.json ~/.discord-claude/config.json
+cat > ~/.discord-claude/config.json << 'EOF'
+{
+  "global": {
+    "allowedRoles": ["developer"],
+    "maxConcurrentSessions": 3,
+    "maxSessionDuration": 3600
+  },
+  "projects": {
+    "my-project": {
+      "path": "/absolute/path/to/your/repo",
+      "allowedShellCommands": ["npm", "npx", "node", "git"]
+    }
+  }
+}
+EOF
+
+# 4. Set bot token
+export DISCORD_BOT_TOKEN=your-token-here
 
 # 5. Start the bot
 npm start
+
+# 6. Invite bot to your server
+#    In the Developer Portal: OAuth2 → URL Generator
+#    Scopes: bot, applications.commands
+#    Permissions integer: 397552234560
+#    (covers Send Messages, Send Messages in Threads, Create Public/Private Threads,
+#     Manage Threads, Add Reactions, Read Message History, Embed Links)
+#    Open the generated URL, select your server, click Authorize
+
+# 7. In any channel, run:
+#    /claude Explain the project structure
 ```
 
-To keep the bot running across restarts:
+## Usage
 
-```sh
-pm2 start dist/index.js --name claudebot
-pm2 save
-```
+### Starting a session with `/claude <prompt>`
 
----
+Type `/claude <prompt>` in any channel. The bot replies, creates a thread from that message, and starts streaming Claude Code's output. Output is updated every ~1.5 seconds via message editing. When a message hits Discord's 2000-character limit, the bot finalizes it and starts a new one. A checkmark reaction marks completion.
+
+### Continuing a session
+
+Send plain messages in the thread. They are forwarded to Claude Code as follow-up prompts. No slash command needed.
+
+**Important — stateless mode.** In Phase 1, each message in a thread spawns an independent Claude Code process with no memory of previous messages. "Now apply that fix" will not work — Claude Code does not know what fix you mean.
+
+Write every prompt as if talking to a fresh instance:
+
+- Reference specific files and line numbers: `In src/auth.ts line 42, change === to !==`
+- Quote the relevant code: paste the snippet from Claude's previous response back into your prompt
+- Describe the full change: don't refer to "the fix you suggested" or "the approach above"
+
+A `--resume` spike is planned for Phase 1 to evaluate whether session continuity is feasible. See [Limitations](#limitations-mvp).
+
+### Ending a session with `/claude-end`
+
+Run `/claude-end` inside the thread. The Claude Code process is killed, the thread is archived, and the session is released. Only the session owner or a user with an admin role can end a session.
+
+### Session lock
+
+The first user to start a session in a thread owns it. If another user posts in that thread, the bot replies:
+
+> This session belongs to @owner (active Nm ago). Start your own: `/claude <prompt>` in any channel.
+
+The lock is released when the session ends, when `idleTimeoutSeconds` expires, or when `maxSessionDuration` is reached.
+
+### Session limits
+
+- **`maxSessionDuration`** (default: 3600s) — hard cap. The process is killed after this many seconds regardless of activity.
+- **`idleTimeoutSeconds`** (default: 600s) — if the session owner sends no messages for this long, the lock is released and the bot notifies the owner.
 
 ## Configuration
 
-Config is loaded from `~/.discord-claude/config.json` (global) merged with `.discord-claude.json` in the project root (project-level overrides global).
+Config is loaded from `~/.discord-claude/config.json` (global) merged with `.discord-claude.json` in the project root (project overrides global).
 
 ```jsonc
-// ~/.discord-claude/config.json
 {
   "global": {
+    // Discord roles allowed to use the bot
     "allowedRoles": ["developer", "admin"],
+
+    // Max simultaneous Claude Code processes
     "maxConcurrentSessions": 5,
+
+    // Hard session duration cap in seconds
     "maxSessionDuration": 3600,
+
+    // Seconds of owner inactivity before releasing the session lock
+    "idleTimeoutSeconds": 600,
+
+    // Regex patterns — matches are redacted from all output before sending to Discord
     "secretPatterns": [
       "sk-[a-zA-Z0-9]+",
       "ghp_[a-zA-Z0-9]+",
       "AKIA[A-Z0-9]+"
-    ]
+    ],
+
+    // Regex to extract cost/token info from Claude Code output (appended to session footer)
+    "costPattern": "\\$[\\d.]+|\\d+ tokens?"
   },
   "projects": {
     "my-app": {
+      // Absolute path to the project root
       "path": "/home/user/projects/my-app",
+
+      // Named commands for /test, /build, /lint shortcuts
       "commands": {
         "test": "npm test",
         "build": "npm run build",
         "lint": "npx eslint .",
         "typecheck": "npx tsc --noEmit"
       },
+
+      // Skip approval gates for file writes (file deletions always require approval)
       "autoApprove": false,
+
+      // Only these commands can be run via /run
       "allowedShellCommands": ["npm", "npx", "node", "git", "cat", "ls", "grep"]
     }
   }
 }
 ```
 
-**Key fields:**
+## Commands Reference
 
-- `allowedRoles` — Discord roles permitted to use the bot.
-- `maxConcurrentSessions` — cap on simultaneous Claude Code processes.
-- `maxSessionDuration` — seconds before a session is forcibly terminated.
-- `secretPatterns` — regex list; matches are redacted from all output before it reaches Discord.
-- `allowedShellCommands` — allowlist for `/run`; commands not in this list are rejected.
-- `autoApprove` — when `false`, destructive file operations require Discord reaction approval. File deletions always require approval regardless of this setting.
-
----
-
-## Commands
-
-### Session management
-
-| Command              | Description                                                    |
-|----------------------|----------------------------------------------------------------|
-| `/claude <prompt>`   | Start a new session thread with an initial prompt             |
-| `/claude-end`        | Terminate the session and archive the thread                  |
-| `/claude-status`     | Show session info: uptime, message count, working directory   |
-| `/claude-sessions`   | List all active sessions server-wide                          |
-
-### File and diff
-
-| Command                 | Description                                             |
-|-------------------------|---------------------------------------------------------|
-| `/file <path>`          | Display a file's contents with syntax highlighting     |
-| `/tree [path] [depth]`  | Show directory structure (respects .gitignore)         |
-| `/diff [file]`          | Show uncommitted changes, or changes to a specific file|
-
-### Git
-
-| Command            | Description                                      |
-|--------------------|--------------------------------------------------|
-| `/git status`      | Show current branch, staged and unstaged changes |
-| `/git log [n]`     | Show last N commits as a compact embed           |
-| `/git branch`      | List branches, highlight current                 |
-| `/git diff [ref]`  | Show diff against a ref or uncommitted changes   |
-
-### Run and build
-
-| Command           | Description                                      |
-|-------------------|--------------------------------------------------|
-| `/run <command>`  | Execute a shell command and stream output        |
-| `/test [filter]`  | Run the configured test suite                    |
-| `/build`          | Run the configured build command                 |
-| `/lint [file]`    | Run linter on a file or the whole project        |
-
-### Project management
-
-| Command                       | Description                                  |
-|-------------------------------|----------------------------------------------|
-| `/project list`               | List configured projects                     |
-| `/project switch <name>`      | Change the active project for new sessions   |
-| `/project add <name> <path>`  | Register a new project directory             |
-
-### Watch and schedule
-
-| Command                       | Description                                              |
-|-------------------------------|----------------------------------------------------------|
-| `/watch <command>`            | Run a command and get notified when it finishes          |
-| `/notify-on-fail <command>`   | Notify only on non-zero exit                             |
-| `/schedule <cron> <command>`  | Run a command on a cron schedule                         |
-
-### Snippets
-
-| Command            | Description                          |
-|--------------------|--------------------------------------|
-| `/snippets`        | List saved snippets                  |
-| `/snippet <name>`  | Retrieve a snippet by name           |
-
-React to any bot message with a pin reaction to save it as a snippet.
-
----
-
-## Roadmap
-
-| Phase | Scope                                                                  | Status  |
-|-------|------------------------------------------------------------------------|---------|
-| 1     | `/claude`, streaming output, session management, RBAC                  | Planned |
-| 2     | `/file`, `/tree`, `/diff`, `/git *`, secret redaction                  | Planned |
-| 3     | `/run`, `/test`, `/build`, `/lint`, project switching                  | Planned |
-| 4     | Mobile polish: buttons, image attachments, DM mode, compact embeds     | Planned |
-| 5     | `/watch`, `/schedule`, snippet save and replay, approval gates         | Planned |
-
----
+| Command | Description | Access |
+|---|---|---|
+| `/claude <prompt>` | Start a new session thread with an initial prompt | Allowed roles |
+| `/claude-end` | Terminate session, archive thread | Session owner or admin |
+| `/claude-status` | Show session uptime, message count, working directory | Allowed roles |
+| `/claude-sessions` | List all active sessions server-wide | Allowed roles |
+| `/file <path>` | Display file contents with syntax highlighting | Allowed roles |
+| `/tree [path] [depth]` | Show directory structure (respects .gitignore) | Allowed roles |
+| `/diff [file]` | Show uncommitted changes | Allowed roles |
+| `/git status` | Current branch, staged/unstaged changes | Allowed roles |
+| `/git log [n]` | Last N commits as a compact embed | Allowed roles |
+| `/git branch` | List branches, highlight current | Allowed roles |
+| `/git diff [ref]` | Diff against a ref or uncommitted changes | Allowed roles |
+| `/run <command>` | Execute an allowed shell command, stream output | Allowed roles |
+| `/test [filter]` | Run configured test command | Allowed roles |
+| `/build` | Run configured build command | Allowed roles |
+| `/lint [file]` | Run linter on a file or the whole project | Allowed roles |
+| `/project list` | List configured projects | Allowed roles |
+| `/project switch <name>` | Change active project for new sessions | Allowed roles |
+| `/project add <name> <path>` | Register a new project directory | Admin |
 
 ## Security
 
-- **Secret redaction** — all output is filtered through `secretPatterns` before being sent to Discord. This runs before every Discord write, not after.
-- **Command allowlist** — `/run` enforces `allowedShellCommands` before shell execution.
-- **Working directory jail** — Claude Code and shell commands are scoped to the configured project path.
-- **Approval gates** — destructive file operations post a Discord embed for explicit user confirmation before proceeding.
-- **Audit log** — all commands and Claude Code invocations are logged via pino with user, timestamp, and working directory.
+**Secret redaction.** All output passes through configurable regex filters (`secretPatterns`) before any Discord write. Default patterns catch OpenAI keys (`sk-...`), GitHub PATs (`ghp_...`), and AWS access keys (`AKIA...`). Add your own patterns for other secrets.
 
----
+**Command allowlist.** The `/run` command validates against `allowedShellCommands` before spawning any process. Commands not in the list are rejected outright.
 
-## Development
+**Path traversal protection.** All file-access commands (`/file`, `/tree`, `/diff`) canonicalize paths and reject anything resolving outside the configured project root.
 
-This project follows the pipeline described in `PROCESS.md`: design first, build second. Before implementing anything, read the relevant stage definitions there.
+**Role-based access control.** Only users with roles listed in `allowedRoles` can interact with the bot. Session termination is restricted to the session owner or admin roles.
 
-**Dev setup (once Phase 1 code exists):**
+**Audit logging.** Every command and Claude Code invocation is logged via pino with user ID, timestamp, and working directory.
+
+## Self-Hosting Notes
+
+**pm2 (recommended):**
 
 ```sh
-npm install
-npm run build        # compile TypeScript
-npm run typecheck    # npx tsc --noEmit
-npm run lint         # eslint
-npm test             # test suite
+npm run build
+pm2 start dist/index.js --name claudebot
+pm2 save
+pm2 startup  # generates a system startup script
 ```
 
-All pull requests must pass typecheck, lint, and tests. The audit log must emit correct pino entries for all commands and Claude Code invocations — this is the primary visibility window for a self-hosted deployment.
+**systemd:**
 
-**Contributing:**
+Create a unit file at `/etc/systemd/system/claudebot.service` pointing to `node /path/to/dist/index.js` with `Environment=DISCORD_BOT_TOKEN=...`. Run `systemctl enable --now claudebot`.
 
-1. Read `PRD.md` to understand the full spec before starting work.
-2. Read `PROCESS.md` for the expected development pipeline.
-3. Open a brief issue or discussion before building anything non-trivial.
-4. Each PR should map to an atomic unit from the planning stage.
+**PATH and environment.** pm2 and systemd run with a minimal environment — `claude` must be on PATH in the bot's execution environment, not just your interactive shell. Verify with:
+```sh
+pm2 exec claudebot -- which claude
+```
+If it fails, set `PATH` explicitly in your pm2 ecosystem file or systemd `Environment=` directive.
 
----
+**Slash command registration.** On first start, the bot registers slash commands with Discord. Global commands can take up to 1 hour to appear. For faster iteration during development, the bot can register commands as guild-specific (instant). Set `DEV_GUILD_ID=your-server-id` in your environment when running in development mode.
 
-## Deployment Options
+**Logs:** By default, pino writes structured JSON to stdout. Pipe to `pino-pretty` for human-readable output during development, or to a file in production:
 
-- **Local machine** — bot runs alongside your dev environment. Simple, but requires the machine to be on.
-- **Cloud VM / VPS** — bot runs on a persistent server with your repo cloned. Always available.
-- **Docker container** — sandboxed environment with a mounted project directory.
+```sh
+pm2 start dist/index.js --name claudebot --log ~/.discord-claude/bot.log
+```
+
+**Orphaned processes.** If the bot crashes without a graceful shutdown, Claude Code subprocesses may persist. After a crash, check for orphaned `claude` processes and kill them manually.
+
+## Limitations (MVP)
+
+- **Stateless sessions.** Each `/claude` invocation starts a fresh Claude Code process with no memory of previous interactions. You must re-provide context manually. A `--resume` spike is planned for Phase 1 to evaluate whether session continuity is feasible.
+- **No DM mode.** The bot only works in server channels and threads. Direct message support is planned for Phase 4.
+- **No approval gates yet.** Destructive file operations are not yet gated behind Discord confirmation prompts. Planned for Phase 5.
+- **No watch/schedule.** `/watch`, `/notify-on-fail`, and `/schedule` are Phase 5 features.
+- **No snippet save/replay.** Bookmarking bot output is planned for Phase 5.
+- **No image input.** Sending screenshots or photos to Claude Code via Discord attachments is planned for Phase 4.
+- **Sessions do not survive restarts.** If the bot restarts, all active sessions are lost. The bot notifies affected threads on startup.
