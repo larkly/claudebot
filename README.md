@@ -184,7 +184,7 @@ Config is loaded from `~/.discord-claude/config.json` (global) merged with `.dis
 |---|---|---|
 | `/claude <prompt>` | Start a new session thread with an initial prompt | Allowed roles |
 | `/claude-end` | Terminate session, archive thread | Session owner or admin |
-| `/claude-status` | Show session uptime, message count, working directory | Allowed roles |
+| `/claude-status` | Show status of the running Claude Code process — uptime, message count, working directory | Allowed roles |
 | `/claude-sessions` | List all active sessions server-wide | Allowed roles |
 | `/file <path>` | Display file contents with syntax highlighting | Allowed roles |
 | `/tree [path] [depth]` | Show directory structure (respects .gitignore) | Allowed roles |
@@ -233,6 +233,23 @@ Create a unit file at `/etc/systemd/system/claudebot.service` pointing to `node 
 pm2 exec claudebot -- which claude
 ```
 If it fails, set `PATH` explicitly in your pm2 ecosystem file or systemd `Environment=` directive.
+
+
+**Docker (community):**
+
+Containerization isolates the bot and Claude Code subprocess inside a separate Linux namespace, adding a layer of process isolation on top of the bot's existing security controls (secret redaction, command allowlist, path traversal protection). A compromise of the bot process is contained within the container boundary rather than reaching the host.
+
+```sh
+docker build -t claudebot .
+docker run -d \
+  --name claudebot \
+  -e DISCORD_BOT_TOKEN=*** \
+  -v ~/.discord-claude:/root/.discord-claude \
+  -v /path/to/your/repo:/workspace \
+  claudebot
+```
+
+> **Note:** The `node-pty` native addon requires a Linux-based container image. On Apple Silicon hosts, build for `linux/amd64` via `--platform linux/amd64` (emulated) or use a native ARM64 image.
 
 **Slash command registration.** On first start, the bot registers slash commands with Discord. Global commands can take up to 1 hour to appear. For faster iteration during development, the bot can register commands as guild-specific (instant). Set `DEV_GUILD_ID=your-server-id` in your environment when running in development mode.
 
