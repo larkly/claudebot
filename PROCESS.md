@@ -112,6 +112,8 @@ Build validation asks "does the code work?" QA asks "does the product work?"
 
 Discord interaction testing requires a live bot token and a dedicated test guild — this cannot be mocked away entirely. Establish the test guild before QA first runs, not during it. At minimum: a test server with the roles and channels the bot expects, a bot token scoped to that server, and a checklist that covers the streaming flow (initial message → edits → ✅ reaction) and the approval gate flow (embed → reaction → proceed/cancel).
 
+> **See [docs/setup.md](docs/setup.md) for the complete setup guide:** Discord application creation, bot token handling, slash command registration, test guild configuration, and a first-run walkthrough.
+
 ### 10. Security Review
 
 Dedicated security pass as a final gate:
