@@ -1,0 +1,21 @@
+{
+  "global": {
+    "allowedRoles": ["developer", "admin"],
+    "maxConcurrentSessions": 5,
+    "maxSessionDuration": 3600,
+    "idleTimeoutSeconds": 600,
+    "secretPatterns": ["sk-[a-zA-Z0-9]+", "ghp_[a-zA-Z0-9]+", "AKIA[A-Z0-9]+"]
+  },
+  "projects": {
+    "example": {
+      "path": "/abs/path/to/your/project",
+      "commands": {
+        "test": "npm test",
+        "build": "npm run build",
+        "lint": "npx eslint ."
+      },
+      "autoApprove": false,
+      "allowedShellCommands": ["npm", "npx", "node", "git", "cat", "ls", "grep"]
+    }
+  }
+}
