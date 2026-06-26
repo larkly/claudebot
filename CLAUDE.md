@@ -8,7 +8,7 @@ This file provides guidance to Claude Code when working in this repository.
 
 ## Current Status
 
-**Pre-implementation / Design phase.** No source code, build tooling, tests, or CI/CD exists yet.
+**Phase 0 complete.** Project scaffolding is in place: `package.json`, `tsconfig.json`, `src/index.ts` entry stub, `.github/workflows/ci.yml` (typecheck, lint, build), and Dependabot config. Design docs (`PRD.md`, `DESIGN.md`, `PROCESS.md`) are finalized. Phase 1 (core loop) is the next implementation target.
 
 ## Tech Stack
 
@@ -49,7 +49,7 @@ Hard constraints across all phases:
 
 | Phase | Scope | Status |
 |-------|-------|--------|
-| 0 | Project setup: package.json, tsconfig, eslint, jest, CI, test Discord server | Not started |
+| 0 | Project setup: package.json, tsconfig, eslint, jest, CI, test Discord server | ✅ Complete (PR #30) |
 | 1 | `/claude`, streaming, session management, RBAC | Not started |
 | 2 | `/file`, `/tree`, `/diff`, `/git *`, secret redaction | Not started |
 | 3 | `/run`, `/test`, `/build`, `/lint`, project switching | Not started |
