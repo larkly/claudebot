@@ -8,7 +8,7 @@ This file provides guidance to Claude Code when working in this repository.
 
 ## Current Status
 
-**Phase 1 in progress.** Core loop implemented: `/claude` slash command, streaming output with ~1.5s flush, session management with idle/watchdog timers, RBAC (session lock), natural language fallback, persistent sessions (`~/.discord-claude/active-threads.json`), secret redaction middleware, and cost tracking footer. Phase 0 (scaffolding) complete. Typecheck and build pass cleanly.
+**Phase 1 complete.** Core loop merged (PR #32): `/claude` slash command, streaming output with ~1.5s flush, session management with idle/watchdog timers, RBAC (session lock), natural language fallback, persistent sessions (`~/.discord-claude/active-threads.json`), secret redaction middleware, and cost tracking footer. Phase 0 (scaffolding) complete. Typecheck and build pass cleanly.
 
 ## Tech Stack
 
@@ -50,7 +50,7 @@ Hard constraints across all phases:
 | Phase | Scope | Status |
 |-------|-------|--------|
 | 0 | Project setup: package.json, tsconfig, eslint, jest, CI, test Discord server | ✅ Complete (PR #30) |
-| 1 | `/claude`, streaming, session management, RBAC | ✅ Implemented |
+| 1 | `/claude`, streaming, session management, RBAC | ✅ Complete (PR #32) |
 | 2 | `/file`, `/tree`, `/diff`, `/git *`, secret redaction | Not started |
 | 3 | `/run`, `/test`, `/build`, `/lint`, project switching | Not started |
 | 4 | Mobile polish: buttons, image attachments, DM mode | Not started |
