@@ -11,7 +11,7 @@ jobs:
   typecheck:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
           node-version: '20'
@@ -23,7 +23,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v6
       - name: Run markdownlint-cli2
         uses: DavidAnson/markdownlint-cli2-action@v23
         with:
